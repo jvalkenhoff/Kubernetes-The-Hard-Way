@@ -328,9 +328,194 @@ Generate ssh keys on the jumpbox:
 `ssh-keygen -t ed25519`
 
 Copy the key to each node:
-```
+```bash
 ssh-copy-id debian@control-plane
 ssh-copy-id debian@worker1
 ssh-copy-id debian@worker2
 ssh-copy-id debian@worker3
 ```
+
+---
+## Step 6: Node Hardening
+We will do more hardening post cluster setup
+
+### SSH Hardening
+Access each node via virsh:
+```
+sudo virsh console control-plane
+sudo virsh console worker1
+sudo virsh console worker2
+sudo virsh console worker3
+```
+
+Edit `/etc/ssh/sshd_config`
+
+Make SSH Key only:
+```
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+```
+
+Restrict SSH to the Jumpbox only:
+```
+AllowUsers debian@10.20.0.5
+```
+
+Reload ssh service:
+`systemctl reload ssh`
+### Time Sync and Basics
+Install:
+```bash
+apt install -y ufw chrony curl ca-certificates gnupg lsb-release
+systemctl enable --now chrony
+```
+
+### Disable Swap
+Kubernetes will not run with swap on:
+```bash
+swapoff -a
+sed -i '/ swap / s/^/#/' /etc/fstab
+```
+
+check if swap is turned off (should show no output):
+```bash
+swapon --show
+```
+
+### Kernel modules
+Create file `/etc/modules-load.d/k8s.conf`
+```bash
+overlay
+br_netfilter
+```
+
+Run:
+```bash
+modprobe overlay
+modprobe br_netfilter
+```
+
+### Sysctl Tuning
+Create file `/etc/sysctl.d/k8s.conf`
+```
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+```
+
+Run `sysctl --system`
+
+### Firewall
+Deny all incoming by default, allow outgoing for:
+- apt install
+- container images
+- CNI downloads
+- time sync
+```bash
+ufw default deny incoming
+ufw default allow outgoing
+```
+
+Allow internal cluster traffic:
+```
+# Allow internal cluster traffic
+ufw allow from 10.20.0.0/24
+```
+
+Only allow traffic from the Jumpbox:
+```
+ufw allow from 10.20.0.5 to any port 22
+```
+
+***Control Plane only***
+Kube API Server
+```
+sudo ufw allow from 10.20.0.0/24 to any port 6443
+sudo ufw allow from 10.20.0.5 to any port 6443
+```
+
+etcd
+```
+ufw allow from 10.20.0.10 to any port 2379
+ufw allow from 10.20.0.10 to any port 2380
+```
+
+***Worker nodes only***
+Kubelet (kubelet <--> kube api server)
+```
+ufw allow from 10.20.0.10 to any port 10250
+```
+
+NodePort range
+```
+ufw allow from 10.20.0.0/24 to any proto tcp port 30000:32767
+```
+
+Apply changes and check
+```
+ufw enable
+ufw status verbose
+```
+
+---
+## Step 7: Jumpbox check
+
+### OS & access
+
+✔ Debian 12 installed  
+✔ You log in as a **normal user** (e.g. `debian`)  
+✔ `sudo` is installed and working  
+✔ SSH key-based access works
+
+Verify:
+`whoami sudo whoami`
+
+### Networking & name resolution
+
+✔ Jumpbox is on `k8s-net`  
+✔ Jumpbox can SSH to **all nodes**  
+✔ Stable IP assigned (e.g. `10.20.0.5`)  
+✔ `/etc/hosts` contains all nodes
+
+`/etc/hosts` should include:
+
+`10.20.0.10 control-plane 10.20.0.11 worker1 10.20.0.12 worker2 10.20.0.13 worker3`
+
+Verify:
+
+`ssh control-plane ssh worker1`
+
+### Base packages (REQUIRED)
+
+These are **non-negotiable** for PKI + kubectl work.
+
+`sudo apt update sudo apt install -y \   curl \   ca-certificates \   gnupg \   openssl \   jq`
+
+Verify:
+
+`openssl version curl --version jq --version`
+
+### kubectl (client only)
+
+✔ kubectl installed  
+✔ Runs as **normal user**  
+✔ No kubeconfig yet (this is correct)
+
+Verify:
+
+`kubectl version --client`
+
+Expected:
+- Client version shown
+- No server connection yet (that’s fine)
+
+### Time synchronization
+
+TLS **will break** if time drifts.
+
+✔ `chrony` installed  
+✔ Time synced
+
+`sudo apt install -y chrony sudo systemctl enable --now chrony chronyc tracking`
+
