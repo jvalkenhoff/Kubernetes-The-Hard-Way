@@ -45,11 +45,11 @@ Logical Volumes:
 `sudo lvs`
 
 ```
-  LV            VG  Attr       LSize  Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
-  control-plane k8s -wi-a----- 40.00g
-  worker1       k8s -wi-a----- 40.00g
-  worker2       k8s -wi-a----- 40.00g
-  worker3       k8s -wi-a----- 40.00g
+LV            VG  Attr       LSize  Pool Origin Data%  Meta%  Move Log Cpy%Sync Convert
+control-plane k8s -wi-a----- 40.00g
+worker1       k8s -wi-a----- 40.00g
+worker2       k8s -wi-a----- 40.00g
+worker3       k8s -wi-a----- 40.00g
 ```
 
 ### Remove Volumes
@@ -82,7 +82,6 @@ sudo tee /etc/NetworkManager/conf.d/99-libvirt.conf <<'EOF'
 unmanaged-devices=interface-name:virbr*
 EOF
 ```
-
 
 ***Reboot the system***
 
@@ -228,6 +227,39 @@ Use following settings during install (pretty much default settings):
 - Install GRUB to main disk (/dev/vda)
 
 ---
+## Step 4: VM Post installation
+
+### Access VMs
+You can access each VM with:
+```
+sudo virsh console control-plane
+sudo virsh console worker1
+sudo virsh console worker2
+sudo virsh console worker3
+
+sudo virsh console jumpbox
+```
+
+### Sudo
+On each VM:
+```
+apt update
+apt install -y sudo
+usermod -aG sudo debian
+```
+
+Logout and back in:
+```
+exit
+logout
+```
+
+Check if you can become sudo with:
+`sudo -i`
+or
+`su -`
+
+---
 ## Step 4: Networking
 
 ### Get MAC addresses
@@ -250,11 +282,11 @@ Edit the existing k8s-net network:
 `sudo virsh net-edit k8s-net`
 
 Add the following lines under `<range ... />`
-```
-      <host mac='52:54:00:1e:69:8e' name='control-plane' ip='10.20.0.10'/>
-      <host mac='52:54:00:00:e5:00' name='worker1' ip='10.20.0.11'/>
-      <host mac='52:54:00:20:00:0e' name='worker2' ip='10.20.0.12'/>
-      <host mac='52:54:00:ef:98:3d' name='worker3' ip='10.20.0.13'/>
+```xml
+<host mac='52:54:00:1e:69:8e' name='control-plane' ip='10.20.0.10'/>
+<host mac='52:54:00:00:e5:00' name='worker1' ip='10.20.0.11'/>
+<host mac='52:54:00:20:00:0e' name='worker2' ip='10.20.0.12'/>
+<host mac='52:54:00:ef:98:3d' name='worker3' ip='10.20.0.13'/>
 ```
 
 ### Restart Network
@@ -274,7 +306,7 @@ sudo virsh start worker3
 ```
 
 The command: `bridge link` should show bridges that are up:
-```
+```shell
 15: vnet0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master virbr20 state forwarding priority 32 cost 2
 16: vnet1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master virbr20 state forwarding priority 32 cost 2
 17: vnet2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master virbr20 state forwarding priority 32 cost 2
@@ -293,61 +325,15 @@ sudo virsh console worker3
 In the VM, you can do: `ip addr show`
 
 ---
-## Step 5: VM Setup
-Access the VMs via virsh:
-```
-sudo virsh console jumpbox
-
-sudo virsh console control-plane
-sudo virsh console worker1
-sudo virsh console worker2
-sudo virsh console worker3
-```
-
-### Sudo Setup
-On each VM:
-```
-su -
-apt update
-apt install -y sudo
-usermod -aG sudo debian
-exit
-logout
-```
-
-### SSH Setup on Jumpbox
-On the jumpbox, edit `/etc/hosts` add add these lines so it matches the VM hosts:
-```
-10.20.0.10 control-plane
-10.20.0.11 worker1
-10.20.0.12 worker2
-10.20.0.13 worker3
-```
-
-Generate ssh keys on the jumpbox:
-`ssh-keygen -t ed25519`
-
-Copy the key to each node:
+## Step 6: Prepare cluster nodes
+Access each node via virsh
+### Base Packages
+Install:
 ```bash
-ssh-copy-id debian@control-plane
-ssh-copy-id debian@worker1
-ssh-copy-id debian@worker2
-ssh-copy-id debian@worker3
+apt install -y ufw chrony curl ca-certificates gnupg lsb-release
 ```
 
----
-## Step 6: Node Hardening
-We will do more hardening post cluster setup
-
-### SSH Hardening
-Access each node via virsh:
-```
-sudo virsh console control-plane
-sudo virsh console worker1
-sudo virsh console worker2
-sudo virsh console worker3
-```
-
+### SSH
 Edit `/etc/ssh/sshd_config`
 
 Make SSH Key only:
@@ -364,11 +350,12 @@ AllowUsers debian@10.20.0.5
 
 Reload ssh service:
 `systemctl reload ssh`
+
 ### Time Sync and Basics
-Install:
-```bash
-apt install -y ufw chrony curl ca-certificates gnupg lsb-release
+TLS **will break** if time is out of sync.
+```
 systemctl enable --now chrony
+chronyc tracking
 ```
 
 ### Disable Swap
@@ -459,63 +446,76 @@ ufw status verbose
 ```
 
 ---
-## Step 7: Jumpbox check
+## Step 7: Prepare Jumpbox
+Access jumpbox via virsh
 
-### OS & access
-
-✔ Debian 12 installed  
-✔ You log in as a **normal user** (e.g. `debian`)  
-✔ `sudo` is installed and working  
-✔ SSH key-based access works
-
-Verify:
-`whoami sudo whoami`
-
-### Networking & name resolution
-
-✔ Jumpbox is on `k8s-net`  
-✔ Jumpbox can SSH to **all nodes**  
-✔ Stable IP assigned (e.g. `10.20.0.5`)  
-✔ `/etc/hosts` contains all nodes
-
-`/etc/hosts` should include:
-
-`10.20.0.10 control-plane 10.20.0.11 worker1 10.20.0.12 worker2 10.20.0.13 worker3`
+### Base packages
+```
+sudo apt update
+sudo apt install -y curl wget tree ca-certificates gnupg openssl jq chrony
+```
 
 Verify:
-
-`ssh control-plane ssh worker1`
-
-### Base packages (REQUIRED)
-
-These are **non-negotiable** for PKI + kubectl work.
-
-`sudo apt update sudo apt install -y \   curl \   ca-certificates \   gnupg \   openssl \   jq`
-
-Verify:
-
-`openssl version curl --version jq --version`
-
-### kubectl (client only)
-
-✔ kubectl installed  
-✔ Runs as **normal user**  
-✔ No kubeconfig yet (this is correct)
-
-Verify:
-
-`kubectl version --client`
-
-Expected:
-- Client version shown
-- No server connection yet (that’s fine)
+`openssl version curl --version` 
+`jq --version`
 
 ### Time synchronization
+TLS **will break** if time is out of sync.
+```
+systemctl enable --now chrony
+chronyc tracking
+```
 
-TLS **will break** if time drifts.
+### SSH Setup
+On the jumpbox, edit `/etc/hosts` add add these lines so it matches the VM hosts:
+```
+10.20.0.10 control-plane
+10.20.0.11 worker1
+10.20.0.12 worker2
+10.20.0.13 worker3
+```
 
-✔ `chrony` installed  
-✔ Time synced
+Generate ssh keys on the jumpbox:
+`ssh-keygen -t ed25519`
 
-`sudo apt install -y chrony sudo systemctl enable --now chrony chronyc tracking`
+Copy the key to each node:
+```bash
+ssh-copy-id debian@control-plane
+ssh-copy-id debian@worker1
+ssh-copy-id debian@worker2
+ssh-copy-id debian@worker3
+```
+
+Verify:
+```
+ssh debian@control-plane 
+ssh debian@worker1
+ssh debian@worker2
+ssh debian@worker3
+```
+
+### kubectl
+Download kubectl:
+```
+wget https://dl.k8s.io/v1.34.2/bin/linux/amd64/kubectl
+```
+
+make it executable:
+```
+chmod +x ~/kubectl
+```
+
+move it to `/usr/local/bin`
+```
+sudo cp ~/kubectl /usr/local/bin/
+```
+
+Verify:
+`kubectl version --client`
+
+Should show:
+```
+Client Version: v1.34.2
+Kustomize Version: v5.7.1
+```
 
