@@ -1,3 +1,4 @@
+# Phase 1: Environment Prep
 ## Step 1: Clean the Disk
 
 ### VM Check
@@ -519,3 +520,120 @@ Client Version: v1.34.2
 Kustomize Version: v5.7.1
 ```
 
+---
+# Phase 2: CA Setup
+We will setup the CA entirely from scratch. It uses a Root CA Setup. If you want to know more how it's setup, check:
+[PKI certificates and requirements | Kubernetes](https://kubernetes.io/docs/setup/best-practices/certificates/) - Official Kubernetes docs about the CA requirements
+[A.5. Creating Your Own Certificates | Security Guide | Red Hat AMQ | 6.2 | Red Hat Documentation](https://docs.redhat.com/en/documentation/red_hat_amq/6.2/html/security_guide/createcerts) - Redhat docs for setting up own CA
+[kubernetes-the-harder-way/docs/04_Bootstrapping_Kubernetes_Security.md at linux · ghik/kubernetes-the-harder-way](https://github.com/ghik/kubernetes-the-harder-way/blob/linux/docs/04_Bootstrapping_Kubernetes_Security.md#the-service-account-token-signing-certificate) - This phase roughly follows this guide
+
+## Step 1. Prepare CA Directory
+
+### Directory setup
+On the jumpbox, run:
+```
+mkdir -p ~/k8s-ca/{certs,crl,newcerts,private,config}
+cd ~/k8s-ca
+chmod 700 private
+```
+
+### Default state
+This creates the database and serial increments:
+```
+touch index.txt
+echo 1000 > serial
+echo 1000 > crlnum
+```
+
+## Step 2. Build Root CA
+### CA config
+Create `config/root-ca.cnf`
+```
+[ ca ]
+default_ca = k8s_root_ca
+
+[ k8s_root_ca ]
+dir           = /home/debian/k8s-ca
+certs         = $dir/certs
+crl_dir       = $dir/crl
+new_certs_dir = $dir/newcerts
+database      = $dir/index.txt
+serial        = $dir/serial
+crlnumber     = $dir/crlnum
+
+private_key = $dir/private/ca.key
+certificate = $dir/certs/ca.crt
+
+default_md    = sha256
+default_days  = 365
+policy        = k8s_policy
+
+unique_subject  = no
+copy_extensions = copy
+```
+
+### CA Policy
+Within the same file, add the policy:
+```
+[ k8s_policy ]
+commonName              = supplied
+organizationName        = optional
+organizationalUnitName  = optional
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+emailAddress            = optional
+```
+
+### CSR defaults
+In `config/root-ca.cnf`, append default settings for CSRs:
+```
+[ req ]
+default_bits        = 4096
+default_md          = sha256
+prompt              = no
+distinguished_name  = req_dn
+```
+
+### Root CA DN
+```
+[ req_dn ]
+CN  = kubernetes-root-ca
+O   = kubernetes
+```
+
+### Extensions
+```
+[ v3_ca ]
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always,issuer
+basicConstraints        = critical, CA:true
+keyUsage                = critical, keyCertSign, cRLSign
+```
+
+Save the file
+
+---
+## Step 3. Create Root CA
+
+### Private Key
+generate the root ca private key:
+```
+openssl genrsa -out private/ca.key 4096
+chmod 600 private/ca.key
+```
+
+### Root CA
+Run this to generate the root CA:
+```
+openssl req -new -x509 -key private/ca.key -out certs/ca.crt -days 3650 -config config/root-ca.cnf -extensions v3_ca
+```
+
+Verify the CA:
+```
+openssl x509 -in certs/ca.crt -noout -text
+```
+
+You should see:
+`CA:TRUE`
+`Key Usage: Certificate Sign, CRL Sign`
