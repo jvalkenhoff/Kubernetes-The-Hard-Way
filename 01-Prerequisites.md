@@ -684,8 +684,11 @@ authorityKeyIdentifier  = keyid,issuer
 ---
 ## Step 5. Certificates
 
+We will setup certificates for each component in the following order:
+1. CSR config creation
+2. CSR creation against private key and config
+3. Certificate creation by signing the CSR
 ### 1. kubectl
-#### 1a. CSR config
 Create `config/admin.cnf`
 ```ini
 [ req ]
@@ -699,25 +702,19 @@ CN  = admin
 O   = system:masters
 ```
 
-#### 1b. Create CSR
-create a private key:
+Create private key, create CSR with private key and config:
 ```
 openssl genrsa -out private/admin.key 4096
-```
 
-Create CSR with private key and config:
-```
 openssl req -new -key private/admin.key -out csr/admin.csr -config config/admin.cnf
 ```
 
-#### 1c. Sign CSR
-Sign the CSR using the CA:
+Sign the CSR using the CA, **client_cert** profile:
 ```
 openssl ca -config config/root-ca.cnf -extensions client_cert -in csr/admin.csr -out certs/admin.crt
 ```
 
-#### 1d. Verify
-Run:
+Verify by running:
 ```
 openssl x509 -in certs/admin.crt -noout -text | grep -A2 "Extended Key Usage"
 ```
@@ -728,8 +725,7 @@ TLS Web Client Authentication
 ```
 
 ### 2. Controller Manager
-#### 2a. CSR config
-Create `config/admin.cnf`
+Create `config/kube-controller-manager.cnf`
 ```ini
 [ req ]
 prompt            = no
@@ -740,25 +736,19 @@ distinguished_name = dn
 CN = system:kube-controller-manager
 ```
 
-#### 2b. Create CSR
-create a private key:
+Create private key, create CSR with private key and config:
 ```
 openssl genrsa -out private/kube-controller-manager.key 4096
-```
 
-Create CSR with private key and config:
-```
 openssl req -new -key private/kube-controller-manager.key -out csr/kube-controller-manager.csr -config config/kube-controller-manager.cnf
 ```
 
-#### 2c. Sign CSR
-Sign the CSR using the CA:
+Sign the CSR using the CA, **client_cert** profile:
 ```
 openssl ca -config config/root-ca.cnf -extensions client_cert -in csr/kube-controller-manager.csr -out certs/kube-controller-manager.crt
 ```
 
-#### 2d. Verify
-Run:
+Verify by running:
 ```
 openssl x509 -in certs/kube-controller-manager.crt -noout -text | grep -A2 "Extended Key Usage"
 ```
@@ -767,3 +757,198 @@ You should see:
 ```
 TLS Web Client Authentication
 ```
+
+### 3. Scheduler
+Create `config/kube-scheduler.cnf`
+```ini
+[ req ]
+prompt              = no
+default_md          = sha256
+distinguished_name  = dn
+
+[ dn ]
+CN = system:kube-scheduler
+```
+
+Create private key, create CSR with private key and config:
+```
+openssl genrsa -out private/kube-scheduler.key 4096
+
+openssl req -new -key private/kube-scheduler.key -out csr/kube-scheduler.csr -config config/kube-scheduler.cnf
+```
+
+Sign the CSR using the CA, **client_cert** profile:
+```
+openssl ca -config config/root-ca.cnf -extensions client_cert -in csr/kube-scheduler.csr -out certs/kube-scheduler.crt
+```
+
+Verify by running:
+```
+openssl x509 -in certs/kube-scheduler.crt -noout -text | grep -A2 "Extended Key Usage"
+```
+
+You should see:
+```
+TLS Web Client Authentication
+```
+
+### 4. API Server
+The API server works a bit differently. the SANs are very important here:
+```ini
+[ req ]
+default_bits        = 4096
+prompt              = no
+default_md          = sha256
+distinguished_name  = dn
+req_extensions      = req_ext
+
+[ dn ]
+CN = kube-apiserver
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = kubernetes
+DNS.2 = kubernetes.default
+DNS.3 = kubernetes.default.svc
+DNS.4 = kubernetes.default.svc.cluster.local
+DNS.5 = control-plane
+DNS.6 = control-plane.k8s.local
+IP.1  = 10.20.0.10
+IP.2  = 127.0.0.1
+```
+
+generate key + csr:
+```
+openssl genrsa -out private/kube-apiserver.key 4096
+
+openssl req -new -key private/kube-apiserver.key -out csr/kube-apiserver.csr -config config/kube-apiserver.cnf
+```
+
+Sign the CSR using the CA, **server_cert** profile:
+```
+openssl ca -config config/root-ca.cnf -extensions server_cert -in csr/kube-apiserver.csr -out certs/kube-apiserver.crt
+```
+
+Verify by running, this time look for Subject Alternative Name:
+```
+openssl x509 -in certs/kube-apiserver.crt -noout -text | grep -A1 "Subject Alternative Name"
+```
+
+You should see:
+```
+X509v3 Subject Alternative Name:
+    DNS:kubernetes, DNS:kubernetes.default, DNS:kubernetes.default.svc, DNS:kubernetes.default.svc.cluster.local, DNS:control-plane, DNS:control-plane.k8s.local, IP Address:10.20.0.10, IP Address:127.0.0.1
+```
+
+### 5. Kubelets
+For each worker we need a certificate for the kubelet. The following steps can be repeated for worker2, worker3
+
+create `config/kubelet-worker1.cnf`
+```ini
+[ req ]
+prompt  = no
+default_md  = sha256
+distinguished_name  = dn
+req_extensions      = req_ext
+
+[ dn ]
+CN = system:node:worker1
+O  = system:nodes
+
+[ req_ext ]
+subjectAltName  = @alt_names
+
+[ alt_names ]
+DNS.1 = worker1
+DNS.2 = worker1.k8s.local
+IP.1  = 10.20.0.11
+```
+
+generate key + csr:
+```
+openssl genrsa -out private/kubelet-worker1.key 4096
+
+openssl req -new -key private/kubelet-worker1.key -out csr/kubelet-worker1.csr -config config/kubelet-worker1.cnf
+```
+
+Sign the CSR using the CA, **peer_cert** profile:
+```
+openssl ca -config config/root-ca.cnf -extensions peer_cert -in csr/kubelet-worker1.csr -out certs/kubelet-worker1.crt
+```
+
+Verify, no `grep` because we need to look in multiple places:
+```
+openssl x509 -in certs/kubelet-worker1.crt -noout -text
+```
+
+Subject:
+```
+Subject: CN = system:node:worker1, O = system:nodes
+```
+
+Extended Key Usage:
+```
+X509v3 Extended Key Usage:
+    TLS Web Server Authentication, TLS Web Client Authentication
+```
+
+Subject Alternative Name:
+```
+X509v3 Subject Alternative Name:
+    DNS:worker1, DNS:worker1.k8s.local, IP Address:10.20.0.11
+```
+
+Repeat for worker2:
+- CN: `system:node:worker2`
+- IP: `10.20.0.12`
+
+worker3:
+- CN: `system:node:worker3`
+- IP: `10.20.0.12`
+
+### 6. kube-proxy
+Although kube-proxy runs on every worker node, it has one single identity. We only need to create one certificate.
+create `config/kube-proxy.cnf`
+```ini
+[ req ]
+prompt = no
+default_md = sha256
+distinguished_name = dn
+
+[ dn ]
+CN = system:kube-proxy
+```
+
+Create private key, create CSR with private key and config:
+```
+openssl genrsa -out private/admin.key 4096
+
+openssl req -new -key private/admin.key -out csr/admin.csr -config config/admin.cnf
+```
+
+Sign the CSR using the CA, **client_cert** profile:
+```
+openssl ca -config config/root-ca.cnf -extensions client_cert -in csr/admin.csr -out certs/admin.crt
+```
+
+Verify by running:
+```
+openssl x509 -in certs/admin.crt -noout -text | grep -A2 "Extended Key Usage"
+```
+
+You should see:
+```
+TLS Web Client Authentication
+```
+
+
+---
+
+## Future:
+Multiple master nodes
+predefined search domain in k8s-net
+static pods
+CRI-O 
+crun
