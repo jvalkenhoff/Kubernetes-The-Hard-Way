@@ -420,4 +420,79 @@ You should see:
 TLS Web Client Authentication
 ```
 
+### 7. etcd
+Create `config/etcd.cnf`
+```ini
+[ req ]
+default_bits        = 4096
+prompt              = no
+default_md          = sha256
+distinguished_name  = dn
+req_extensions      = req_ext
 
+[ dn ]
+CN = etcd
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = control-plane
+DNS.2 = localhost
+IP.1  = 10.20.0.10
+IP.2  = 127.0.0.1
+```
+
+Create private key, create CSR with private key and config:
+```
+openssl genrsa -out private/etcd.key 4096
+
+openssl req -new -key private/etcd.key -out csr/etcd.csr -config config/etcd.cnf
+```
+
+Sign the CSR using the CA, **peer_cert** profile:
+```
+openssl ca -config config/root-ca.cnf -extensions peer_cert -in csr/etcd.csr -out certs/etcd.crt
+```
+
+Verify by running:
+```
+openssl x509 -in certs/etcd.crt -noout -text
+```
+
+**Check carefully:**
+Subject
+```
+Subject: CN = etcd
+```
+
+Extended Key Usage
+```
+X509v3 Extended Key Usage:
+    TLS Web Server Authentication, TLS Web Client Authentication
+```
+
+Subject Alternative Name
+```
+X509v3 Subject Alternative Name:
+    DNS:control-plane, DNS:localhost, IP Address:10.20.0.10, IP Address:127.0.0.1
+```
+
+## Step 6. SA Signing Key
+Not really related to the CA, still meaningful to do it now
+
+run:
+```
+openssl genrsa -out private/sa.key 4096
+```
+
+extract the public key:
+```
+openssl rsa -in private/sa.key -pubout -out certs/sa.pub
+```
+
+Verify if both are created:
+```
+ls certs/sa*
+ls private/sa*
+```
