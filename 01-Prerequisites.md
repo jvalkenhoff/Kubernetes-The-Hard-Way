@@ -548,7 +548,7 @@ echo 1000 > crlnum
 ## Step 2. Build Root CA
 ### CA config
 Create `config/root-ca.cnf`
-```
+```ini
 [ ca ]
 default_ca = k8s_root_ca
 
@@ -574,7 +574,7 @@ copy_extensions = copy
 
 ### CA Policy
 Within the same file, add the policy:
-```
+```ini
 [ k8s_policy ]
 commonName              = supplied
 organizationName        = optional
@@ -587,7 +587,7 @@ emailAddress            = optional
 
 ### CSR defaults
 In `config/root-ca.cnf`, append default settings for CSRs:
-```
+```ini
 [ req ]
 default_bits        = 4096
 default_md          = sha256
@@ -596,14 +596,14 @@ distinguished_name  = req_dn
 ```
 
 ### Root CA DN
-```
+```ini
 [ req_dn ]
 CN  = kubernetes-root-ca
 O   = kubernetes
 ```
 
 ### Extensions
-```
+```ini
 [ v3_ca ]
 subjectKeyIdentifier    = hash
 authorityKeyIdentifier  = keyid:always,issuer
@@ -637,3 +637,133 @@ openssl x509 -in certs/ca.crt -noout -text
 You should see:
 `CA:TRUE`
 `Key Usage: Certificate Sign, CRL Sign`
+
+---
+## Step 4. CA Profiles
+not necessary. But in real CA you never issue certs without certificate profiles.
+
+### Add to CA Config
+open the CA config to add the certificate profiles:
+```
+vim ~/k8s-ca/config/root-ca.cnf
+```
+#### Client
+Issues for kubectl, controller-manager, scheduler
+
+```ini
+[ client_cert ]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = clientAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+```
+
+#### Server
+Issues for the API server
+```ini
+[ server_cert ]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+```
+
+#### Peer
+Issues for the kubelet
+```ini
+[ peer_cert ]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth, clientAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+```
+
+---
+## Step 5. Certificates
+
+### 1. kubectl
+#### 1a. CSR config
+Create `config/admin.cnf`
+```ini
+[ req ]
+default_bits        = 4096
+prompt              = no
+default_md          = sha256
+distinguished_name  = dn
+
+[ dn ]
+CN  = admin
+O   = system:masters
+```
+
+#### 1b. Create CSR
+create a private key:
+```
+openssl genrsa -out private/admin.key 4096
+```
+
+Create CSR with private key and config:
+```
+openssl req -new -key private/admin.key -out csr/admin.csr -config config/admin.cnf
+```
+
+#### 1c. Sign CSR
+Sign the CSR using the CA:
+```
+openssl ca -config config/root-ca.cnf -extensions client_cert -in csr/admin.csr -out certs/admin.crt
+```
+
+#### 1d. Verify
+Run:
+```
+openssl x509 -in certs/admin.crt -noout -text | grep -A2 "Extended Key Usage"
+```
+
+You should see:
+```
+TLS Web Client Authentication
+```
+
+### 2. Controller Manager
+#### 2a. CSR config
+Create `config/admin.cnf`
+```ini
+[ req ]
+prompt            = no
+default_md        = sha256
+distinguished_name = dn
+
+[ dn ]
+CN = system:kube-controller-manager
+```
+
+#### 2b. Create CSR
+create a private key:
+```
+openssl genrsa -out private/kube-controller-manager.key 4096
+```
+
+Create CSR with private key and config:
+```
+openssl req -new -key private/kube-controller-manager.key -out csr/kube-controller-manager.csr -config config/kube-controller-manager.cnf
+```
+
+#### 2c. Sign CSR
+Sign the CSR using the CA:
+```
+openssl ca -config config/root-ca.cnf -extensions client_cert -in csr/kube-controller-manager.csr -out certs/kube-controller-manager.crt
+```
+
+#### 2d. Verify
+Run:
+```
+openssl x509 -in certs/kube-controller-manager.crt -noout -text | grep -A2 "Extended Key Usage"
+```
+
+You should see:
+```
+TLS Web Client Authentication
+```
