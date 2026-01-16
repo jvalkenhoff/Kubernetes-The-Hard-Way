@@ -509,13 +509,14 @@ I will use these paths for distributing the certificates:
 ### Create directories
 On the control plane:
 ```bash
-ssh debian@control-plane "sudo mkdir -p /etc/kubernetes/pki /var/lib/kubernetes && sudo chown -R root:root /etc/kubernetes /var/lib/kubernetes"
-```
+# control plane
+ssh debian@control-plane "sudo install -d -m 0755 /etc/kubernetes/pki"
 
-For each worker:
-```bash
+# workers
 for n in worker1 worker2 worker3; do
-	ssh debian@$n "sudo mkdir -p /etc/kubernetes/pki /var/lib/kubelet /var/lib/kubernetes && sudo chown -R root:root /etc/kubernetes /var/lib/kubelet /var/lib/kubernetes"
+  ssh debian@$n "sudo install -d -m 0755 /etc/kubernetes/pki \
+    && sudo install -d -m 0755 /var/lib/kubelet/pki \
+    && sudo install -d -m 0755 /var/lib/kube-proxy/pki"
 done
 ```
 
@@ -529,22 +530,32 @@ Control Plane needs the following:
 - service account private and public key
 
 ```bash
-scp certs/ca.crt debian@control-plane:/tmp/
-scp certs/kube-apiserver.crt private/kube-apiserver.key debian@control-plane:/tmp/
-scp certs/kube-controller-manager.crt private/kube-controller-manager.key debian@control-plane:/tmp/
-scp certs/kube-scheduler.crt private/kube-scheduler.key debian@control-plane:/tmp/
-scp private/sa.key certs/sa.pub debian@control-plane:/tmp/
+scp certs/ca.crt \
+    certs/kube-apiserver.crt private/kube-apiserver.key \
+    certs/kube-controller-manager.crt private/kube-controller-manager.key \
+    certs/kube-scheduler.crt private/kube-scheduler.key \
+    certs/etcd.crt private/etcd.key \
+    private/sa.key certs/sa.pub \
+    debian@control-plane:~/
 ```
 
 Move files into place:
 ```bash
-ssh debian@control-plane 'sudo mv /tmp/ca.crt /etc/kubernetes/pki/ca.crt'
-ssh debian@control-plane 'sudo mv /tmp/kube-apiserver.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-apiserver.key /etc/kubernetes/pki/'
-ssh debian@control-plane 'sudo mv /tmp/kube-controller-manager.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-controller-manager.key /etc/kubernetes/pki/'
-ssh debian@control-plane 'sudo mv /tmp/kube-scheduler.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-scheduler.key /etc/kubernetes/pki/'
-ssh debian@control-plane 'sudo mv /tmp/sa.key /etc/kubernetes/pki/sa.key && sudo mv /tmp/sa.pub /etc/kubernetes/pki'
-
-ssh debian@control-plane 'sudo chmod 600 /etc/kubernetes/pki/*.key'
+ssh debian@control-plane "
+  sudo install -m 0644 -o root -g root ca.crt /etc/kubernetes/pki/ca.crt &&
+  sudo install -m 0644 -o root -g root kube-apiserver.crt /etc/kubernetes/pki/ &&
+  sudo install -m 0600 -o root -g root kube-apiserver.key /etc/kubernetes/pki/ &&
+  sudo install -m 0644 -o root -g root kube-controller-manager.crt /etc/kubernetes/pki/ &&
+  sudo install -m 0600 -o root -g root kube-controller-manager.key /etc/kubernetes/pki/ &&
+  sudo install -m 0644 -o root -g root kube-scheduler.crt /etc/kubernetes/pki/ &&
+  sudo install -m 0600 -o root -g root kube-scheduler.key /etc/kubernetes/pki/ &&
+  sudo install -m 0644 -o root -g root etcd.crt /etc/kubernetes/pki/ &&
+  sudo install -m 0600 -o root -g root etcd.key /etc/kubernetes/pki/
+  sudo install -m 0600 -o root -g root sa.key /etc/kubernetes/pki/sa.key &&
+  sudo install -m 0644 -o root -g root sa.pub /etc/kubernetes/pki/sa.pub &&
+  
+  rm -f ca.crt kube-apiserver.crt kube-apiserver.key kube-controller-manager.crt kube-controller-manager.key kube-scheduler.crt kube-scheduler.key sa.key sa.pub
+"
 ```
 
 ### Worker nodes
@@ -554,14 +565,34 @@ Each worker node needs:
 - shared kubeproxy crt and key
 
 ```bash
-scp certs/ca.crt debian@worker1:/tmp/
-scp certs/kubelet-worker1.crt private/kubelet-worker1.key debian@control-plane:/tmp/
-scp certs/kube-proxy.crt private/kube-proxy.key debian@control-plane:/tmp/
+for n in worker1 worker2 worker3; do
+  HOST=debian@$n
+
+  # copy required files to worker home dir
+  scp certs/ca.crt \
+      certs/kubelet-$n.crt private/kubelet-$n.key \
+      certs/kube-proxy.crt private/kube-proxy.key \
+      $HOST:~/
+done
 ```
 
 move files into place:
 ```bash
-ssh debian@worker1 'sudo mv /tmp/ca.crt /etc/kubernetes/pki/ca.crt'
-ssh debian@worker1 'sudo mv /tmp/kubelet-worker1.crt /etc/kubernetes/pki/ && sudo mv /tmp/kubelet-worker1.key /etc/kubernetes/pki/'
-ssh debian@worker1 'sudo mv /tmp/kube-proxy.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-proxy.key /etc/kubernetes/pki/'
+
+for n in worker1 worker2 worker3; do
+  HOST=debian@$n
+  # install into component-owned locations
+  ssh $HOST "
+    sudo install -m 0644 -o root -g root ca.crt /etc/kubernetes/pki/ca.crt &&
+
+    sudo install -m 0644 -o root -g root kubelet-$n.crt /var/lib/kubelet/pki/kubelet.crt &&
+    sudo install -m 0600 -o root -g root kubelet-$n.key /var/lib/kubelet/pki/kubelet.key &&
+
+    sudo install -m 0644 -o root -g root kube-proxy.crt /var/lib/kube-proxy/pki/kube-proxy.crt &&
+    sudo install -m 0600 -o root -g root kube-proxy.key /var/lib/kube-proxy/pki/kube-proxy.key &&
+
+    rm -f ca.crt kubelet-$n.crt kubelet-$n.key kube-proxy.crt kube-proxy.key
+  "
+done
 ```
+
