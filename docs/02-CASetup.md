@@ -478,6 +478,7 @@ X509v3 Subject Alternative Name:
     DNS:control-plane, DNS:localhost, IP Address:10.20.0.10, IP Address:127.0.0.1
 ```
 
+---
 ## Step 6. SA Signing Key
 Not really related to the CA, still meaningful to do it now
 
@@ -495,4 +496,72 @@ Verify if both are created:
 ```
 ls certs/sa*
 ls private/sa*
+```
+
+---
+## Step 7. Distribute Certificates
+### Decide Locations
+I will use these paths for distributing the certificates:
+- **CA Trust:** `/etc/kubernetes/pki/ca.crt`
+- **Components:** `/etc/kubernetes/pki/*.crt | *.key`
+- **Service Account:** `/etc/kubernetes/pki/sa.key` and `/etc/kubernetes/pki/sa.pub`
+
+### Create directories
+On the control plane:
+```bash
+ssh debian@control-plane "sudo mkdir -p /etc/kubernetes/pki /var/lib/kubernetes && sudo chown -R root:root /etc/kubernetes /var/lib/kubernetes"
+```
+
+For each worker:
+```bash
+for n in worker1 worker2 worker3; do
+	ssh debian@$n "sudo mkdir -p /etc/kubernetes/pki /var/lib/kubelet /var/lib/kubernetes && sudo chown -R root:root /etc/kubernetes /var/lib/kubelet /var/lib/kubernetes"
+done
+```
+
+### Control Plane
+Control Plane needs the following:
+- CA Cert
+- API server cert and key
+- kube controller manager cert and key
+- scheduler cert and key
+- etcd cert and key
+- service account private and public key
+
+```bash
+scp certs/ca.crt debian@control-plane:/tmp/
+scp certs/kube-apiserver.crt private/kube-apiserver.key debian@control-plane:/tmp/
+scp certs/kube-controller-manager.crt private/kube-controller-manager.key debian@control-plane:/tmp/
+scp certs/kube-scheduler.crt private/kube-scheduler.key debian@control-plane:/tmp/
+scp private/sa.key certs/sa.pub debian@control-plane:/tmp/
+```
+
+Move files into place:
+```bash
+ssh debian@control-plane 'sudo mv /tmp/ca.crt /etc/kubernetes/pki/ca.crt'
+ssh debian@control-plane 'sudo mv /tmp/kube-apiserver.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-apiserver.key /etc/kubernetes/pki/'
+ssh debian@control-plane 'sudo mv /tmp/kube-controller-manager.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-controller-manager.key /etc/kubernetes/pki/'
+ssh debian@control-plane 'sudo mv /tmp/kube-scheduler.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-scheduler.key /etc/kubernetes/pki/'
+ssh debian@control-plane 'sudo mv /tmp/sa.key /etc/kubernetes/pki/sa.key && sudo mv /tmp/sa.pub /etc/kubernetes/pki'
+
+ssh debian@control-plane 'sudo chmod 600 /etc/kubernetes/pki/*.key'
+```
+
+### Worker nodes
+Each worker node needs:
+- CA Cert
+- its own kubelet crt and key
+- shared kubeproxy crt and key
+
+```bash
+scp certs/ca.crt debian@worker1:/tmp/
+scp certs/kubelet-worker1.crt private/kubelet-worker1.key debian@control-plane:/tmp/
+scp certs/kube-proxy.crt private/kube-proxy.key debian@control-plane:/tmp/
+```
+
+move files into place:
+```bash
+ssh debian@worker1 'sudo mv /tmp/ca.crt /etc/kubernetes/pki/ca.crt'
+ssh debian@worker1 'sudo mv /tmp/kubelet-worker1.crt /etc/kubernetes/pki/ && sudo mv /tmp/kubelet-worker1.key /etc/kubernetes/pki/'
+ssh debian@worker1 'sudo mv /tmp/kube-proxy.crt /etc/kubernetes/pki/ && sudo mv /tmp/kube-proxy.key /etc/kubernetes/pki/'
 ```
