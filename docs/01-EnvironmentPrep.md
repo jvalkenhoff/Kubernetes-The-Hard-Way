@@ -495,20 +495,74 @@ ssh debian@worker2
 ssh debian@worker3
 ```
 
-### kubectl
-Download kubectl:
-```
-wget https://dl.k8s.io/v1.34.2/bin/linux/amd64/kubectl
+---
+## Step 8. Download Binaries
+
+### Create directories
+```bash
+ssh debian@jumpbox "mkdir -p ~/downloads/{client,cni-plugins,controller,worker} /tmp/binaries"
 ```
 
-make it executable:
+### Copy download list
 ```
-chmod +x ~/kubectl
+scp /k8s-downloads.txt debian@jumpbox:/tmp/k8s-binaries/
 ```
 
-move it to `/usr/local/bin`
+### Binary list
+Download the binaries into the `/tmp/k8s-binaries` directory using the `wget` command
+```bash
+wget -q --show-progress --https-only --timestamping -P /tmp/binaries -i downloads.txt
 ```
-sudo cp ~/kubectl /usr/local/bin/
+
+### Kube binaries
+```bash
+mv /tmp/binaries/{kube-apiserver,kube-controller-manager,kube-scheduler} ~/downloads/controller/ && mv /tmp/binaries/kubectl ~/downloads/client/ && mv /tmp/binaries/{kubelet,kube-proxy} ~/downloads/worker/
+```
+
+### runc
+```
+mv ./runc.amd64 ~/downloads/worker/runc
+```
+
+### CRI
+```
+tar -xvf /tmp/binaries/crictl-v1.34.0-linux-amd64.tar.gz
+mv /tmp/binaries/crictl ~/downloads/worker/
+```
+
+### containerd
+```
+tar -xvf /tmp/binaries/containerd-2.2.1-linux-amd64.tar.gz --strip-components 1
+find /binaries/ -maxdepth 1 -type f -exec sh -c 'file "$1" | grep -q "executable"' _ {} \; -exec mv {} ~/downloads/worker/ \;
+```
+
+### CNI Plugins
+```
+tar -xvf /tmp/binaries/cni-plugins-linux-amd64-v1.9.0.tgz
+find /binaries -maxdepth 1 -type f -exec sh -c 'file "$1" | grep -q "executable"' _ {} \; -exec mv {} ~/downloads/cni-plugins/ \;
+```
+
+### etcd
+```
+tar -xvf etcd-v3.6.7-linux-amd64.tar.gz --strip-components 1
+mv /tmp/binaries/etcd ~/downloads/controller/
+mv /tmp/binaries/etcdctl ~/downloads/client/
+```
+
+### Remove /tmp/binaries
+```
+rm -R /tmp/k8s-binaries/
+```
+
+### Make executable
+```
+chmod +x ~/downloads/{client,cni-plugins,controller,worker}/*
+```
+
+## Step 9. Kubectl
+Install kubectl right away. move it to `/usr/local/bin`
+```
+sudo mv ~downloads/client/kubectl /usr/local/bin/
 ```
 
 Verify:
@@ -519,4 +573,3 @@ Should show:
 Client Version: v1.34.2
 Kustomize Version: v5.7.1
 ```
-
