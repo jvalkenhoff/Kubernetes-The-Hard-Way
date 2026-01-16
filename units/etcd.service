@@ -1,0 +1,32 @@
+[Unit]
+Description=etcd
+Documentation=https://etcd.io/docs/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=etcd
+ExecStart=/usr/local/bin/etcd \
+  --name control-plane \
+  --data-dir /var/lib/etcd \
+  --listen-client-urls https://127.0.0.1:2379,https://10.20.0.10:2379 \
+  --advertise-client-urls https://10.20.0.10:2379 \
+  --listen-peer-urls https://10.20.0.10:2380 \
+  --initial-advertise-peer-urls https://10.20.0.10:2380 \
+  --initial-cluster control-plane=https://10.20.0.10:2380 \
+  --initial-cluster-token k8s-etcd-cluster \
+  --initial-cluster-state new \
+  --client-cert-auth=true \
+  --trusted-ca-file=/etc/etcd/ca.crt \
+  --cert-file=/etc/etcd/etcd.crt \
+  --key-file=/etc/etcd/etcd.key \
+  --peer-client-cert-auth=true \
+  --peer-trusted-ca-file=/etc/etcd/ca.crt \
+  --peer-cert-file=/etc/etcd/etcd.crt \
+  --peer-key-file=/etc/etcd/etcd.key
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
