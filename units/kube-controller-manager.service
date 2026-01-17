@@ -1,0 +1,27 @@
+[Unit]
+Description=Kubernetes Controller Manager
+Documentation=https://kubernetes.io/docs/
+After=network-online.service kube-apiserver.service
+Wants=network-onine.target
+
+[Service]
+ExecStart=/usr/local/bin/kube-controller-manager \
+  --bind-address=127.0.0.1 \
+  --cluster-name=kubernetes \
+  --kubeconfig=/etc/kubernetes/kube-controller-manager.kubeconfig \
+  --service-account-private-key-file=/var/lib/kubernetes/service-account.key \
+  --root-ca-file=/var/lib/kubernetes/ca.crt \
+  --cluster-signing-cert-file=/var/lib/kubernetes/ca.crt \
+  --cluster-signing-key-file=/etc/kubernetes/pki/ca.key \
+  --use-service-account-credentials=true \
+  --allocate-node-cidrs=true \
+  --cluster-cidr=10.200.0.0/16 \
+  --service-cluster-ip-range=10.32.0.0/24 \
+  --controllers=*,bootstrapsigner,tokencleaner \
+  --leader-elect=true \
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
