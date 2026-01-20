@@ -153,7 +153,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now containerd
 ```
 
-## Step 2. Kubelet
+## Step 3. Kubelet
 
 ### Prepare folders
 run:
@@ -230,3 +230,60 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable --now kubelet
 ```
+
+## Step 4. Kube-proxy
+### Prepare folders
+run:
+```
+sudo mkdir -p /var/lib/kube-proxy
+```
+
+### Install
+from the jumpbox:
+```
+scp ~/downloads/workers/kube-proxy debian@worker1:~/
+```
+
+```
+sudo install -m 0755 kube-proxy /usr/local/bin/
+```
+
+### Config
+`/var/lib/kube-proxy/kube-proxy-config.yaml`
+
+Same CIDR as defined in the Controller manager
+```yaml
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+clientConnection:
+  clientConnection: /var/lib/kube-proxy/kubeconfig
+mode: iptables
+clusterCIDR: 10.200.0.0/16
+```
+
+### Systemd
+`/etc/systemd/system/kube-proxy.service`
+
+```ini
+[Unit]
+Description=Kubernetes Kube Proxy
+Documentation=https://github.com/kubernetes/kubernetes
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/kube-proxy \
+  --config=/var/lib/kube-proxy/kube-proxy-config.yaml \
+  --v=2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Start
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now kube-proxy
+```
+
