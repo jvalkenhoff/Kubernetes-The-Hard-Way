@@ -1,24 +1,11 @@
-## Step 1 containerd
-I advise to install containerd along with CNI, since containerd immediately looks for CNI plugins when installed. 
+## Step 1. CNI
 
 ### Prepare folders
 on the worker node, run this:
 ```
-sudo mkdir -p /etc/containerd/ /etc/cni/net.d/ /opt/cni/bin
+sudo mkdir -p /etc/cni/net.d/ /opt/cni/bin
 ```
-
-### Install runtime
-from the jumpbox, scp to the worker node:
-```
-scp ~/downloads/worker/containerd ~/downloads/worker/containerd-shim-runc-v2 ~/downloads/worker/ctr ~/downloads/worker/runc debian@worker1:~/
-```
-
-
-```
-sudo install -m 0755 containerd containerd-shim-runc-v2 /bin/
-sudo install -m 0755 runc /usr/local/bin/
-```
-### Install CNI
+### Install
 from the jumpbox, scp to the worker node:
 ```
 scp ~/downloads/cni-plugins/* debian@worker1:~/cni-plugins/
@@ -26,49 +13,6 @@ scp ~/downloads/cni-plugins/* debian@worker1:~/cni-plugins/
 
 ```
 sudo install -m 0755 ./cni-plugins/* /opt/cni/bin/
-```
-
-### Config containerd
-run:
-```
-containerd config default | sudo tee /etc/containerd/config.toml >/dev/null
-```
-
-This creates a containerd config file. open `/etc/containerd/config.toml`, and set:
-```toml
-[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
-SystemdCgroup = true
-```
-
-### Unit file
-create `/etc/system/systemd/containerd.service`
-
-```ini
-[Unit]
-Description=containerd
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStartPre=/sbin/modprobe overlay
-ExecStart=/bin/containerd
-Restart=always
-RestartSec=5
-Delegate=yes
-KillMode=process
-OOMScoreAdjust=-999
-LimitNOPROFILE=1048576
-LimitNPROC=infinity
-LimitCORE=infinity
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Start
-```
-sudo systemctl daemon-reload
-sudo systemctl enable --now containerd
 ```
 
 ### Bridge CNI
@@ -147,3 +91,142 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now pod-cidr-routes
 ```
 
+## Step 2. containerd
+
+### Prepare folders
+on the worker node, run this:
+```
+sudo mkdir -p /etc/containerd/ /etc/cni/net.d/ /opt/cni/bin
+```
+
+### Install runtime
+from the jumpbox, scp to the worker node:
+```
+scp ~/downloads/worker/containerd ~/downloads/worker/containerd-shim-runc-v2 ~/downloads/worker/ctr ~/downloads/worker/runc debian@worker1:~/
+```
+
+```
+sudo install -m 0755 containerd containerd-shim-runc-v2 /bin/
+sudo install -m 0755 runc /usr/local/bin/
+```
+
+### Config containerd
+run:
+```
+containerd config default | sudo tee /etc/containerd/config.toml >/dev/null
+```
+
+This creates a containerd config file. open `/etc/containerd/config.toml`, and set:
+```toml
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+SystemdCgroup = true
+```
+
+### Systemd
+create `/etc/system/systemd/containerd.service`
+
+```ini
+[Unit]
+Description=containerd
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=/sbin/modprobe overlay
+ExecStart=/bin/containerd
+Restart=always
+RestartSec=5
+Delegate=yes
+KillMode=process
+OOMScoreAdjust=-999
+LimitNOPROFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Start
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now containerd
+```
+
+## Step 2. Kubelet
+
+### Prepare folders
+run:
+```
+sudo mkdir -p /var/lib/kubelet
+```
+
+### Install
+from the jumpbox:
+```
+scp ~/downloads/workers/kubelet debian@worker1:~/
+```
+
+```
+sudo install -m 0755 kubelet /usr/local/bin/
+```
+
+### Config
+`/var/lib/kubelet/kubelet-config.yaml`
+
+```yaml
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+address: "0.0.0.0"
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    enabled: true
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+authorization:
+  mode: Webhook
+containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
+runtimeRequestTimeout: 15m
+cgroupDriver: systemd
+rotateCertificates: false
+enableServer: true
+failSwapOn: false
+maxPods: 16
+memorySwap:
+  swapBehavior: NoSwap
+port: 10250
+resolvConf: "/etc/resolv.conf"
+registerNode: true
+tlsCertFile: "/var/lib/kubelet/pki/kubelet.crt"
+tlsPrivateKeyFile: "/var/lib/kubelet/pki/kubelet.key"
+```
+
+### Systemd
+Create `/etc/systemd/system/kubelet.service`
+
+```ini
+[Unit]
+Description=Kubernetes Kubelet
+After=containerd.service
+Requires=containerd.service
+
+[Service]
+ExecStart=/usr/local/bin/kubelet \
+  --config=/var/lib/kubelet/kubelet-config.yaml \
+  --kubeconfig=/var/lib/kubelet/kubeconfig \
+  --node-ip=10.20.0.11 \
+  --v=2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Start
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now kubelet
+```
