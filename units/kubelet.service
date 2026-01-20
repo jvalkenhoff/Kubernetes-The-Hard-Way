@@ -1,0 +1,16 @@
+[Unit]
+Description=Kubernetes Kubelet
+After=containerd.service
+Requires=containerd.service
+
+[Service]
+ExecStart=/usr/local/bin/kubelet \
+  --config=/var/lib/kubelet/kubelet-config.yaml \
+  --kubeconfig=/etc/kubernetes/kubelet.kubeconfig \
+  --node-ip=10.20.0.11 \
+  --v=2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

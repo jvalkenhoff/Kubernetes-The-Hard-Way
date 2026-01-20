@@ -1,0 +1,26 @@
+apiVersion: kubelet.config.k8s.io/v1
+kind: KubeletConfiguration
+address: "0.0.0.0"
+authentication:
+  anonymous:
+    enabled: false
+  webhook:
+    enabled: true
+  x509:
+    clientCAFile: /etc/kubernetes/pki/ca.crt
+authorization:
+  mode: Webhook
+containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
+runtimeRequestTimeout: 15m
+cgroupDriver: systemd
+rotateCertificates: false
+enableServer: true
+failSwapOn: false
+maxPods: 16
+memorySwap:
+  swapBehavior: NoSwap
+port: 10250
+resolvConf: "/etc/resolv.conf"
+registerNode: true
+tlsCertFile: "/var/lib/kubelet/pki/kubelet.crt"
+tlsPrivateKeyFile: "/var/lib/kubelet/pki/kubelet.key"
