@@ -1,3 +1,4 @@
+# Phase 5: Worker Setup
 ## Step 1. CNI
 
 ### Prepare folders
@@ -17,6 +18,11 @@ sudo install -m 0755 ./cni-plugins/* /opt/cni/bin/
 
 ### Bridge CNI
 `/etc/cni/net.d/10-bridge.conflist`
+
+For each worker, `subnet` most be different:
+- Worker 1: `10.200.1.0/24`
+- Worker 2: `10.200.2.0/24`
+- Worker 3: `10.200.3.0/24`
 
 ```json
 {
@@ -43,7 +49,7 @@ sudo install -m 0755 ./cni-plugins/* /opt/cni/bin/
     },
     {
       "type": "portmap",
-      "capabilities": { "portMappings": true}
+      "capabilities": { "portMappings": true }
     }
   ]
 }
@@ -60,43 +66,13 @@ sudo install -m 0755 ./cni-plugins/* /opt/cni/bin/
 }
 ```
 
-### Cross Pod CIDR Routing
-
-on worker1:
-```
-sudo ip route add 10.200.2.0/24 via 10.20.0.12
-sudo ip route add 10.200.3.0/24 via 10.20.0.13
-```
-
-persist with systemd file `/etc/systemd/system/pod-cidr-routes.service`
-
-```ini
-[Unit]
-Description=Kubernetes Pod CIDR Routes
-After=network-online.service
-Wants=network-online.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/sbin/ip route add 10.200.2.0/24 via 10.20.0.12
-ExecStart=/usr/sbin/ip route add 10.200.3.0/24 via 10.20.0.13
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-```
-sudo systemctl daemon-reload
-sudo systemctl enable --now pod-cidr-routes
-```
 
 ## Step 2. containerd
 
 ### Prepare folders
 on the worker node, run this:
 ```
-sudo mkdir -p /etc/containerd/ /etc/cni/net.d/ /opt/cni/bin
+sudo mkdir -p /etc/containerd/
 ```
 
 ### Install runtime
@@ -123,7 +99,7 @@ SystemdCgroup = true
 ```
 
 ### Systemd
-create `/etc/system/systemd/containerd.service`
+create `/etc/systemd/system/containerd.service`
 
 ```ini
 [Unit]
@@ -164,7 +140,7 @@ sudo mkdir -p /var/lib/kubelet
 ### Install
 from the jumpbox:
 ```
-scp ~/downloads/workers/kubelet debian@worker1:~/
+scp ~/downloads/worker/kubelet debian@worker1:~/
 ```
 
 ```
@@ -206,6 +182,11 @@ tlsPrivateKeyFile: "/var/lib/kubelet/pki/kubelet.key"
 ### Systemd
 Create `/etc/systemd/system/kubelet.service`
 
+the `--node-ip` flag must correspond to the current worker, so:
+- worker1: `10.20.0.11`
+- worker2: `10.20.0.12`
+- worker3: `10.20.0.13`
+
 ```ini
 [Unit]
 Description=Kubernetes Kubelet
@@ -241,7 +222,7 @@ sudo mkdir -p /var/lib/kube-proxy
 ### Install
 from the jumpbox:
 ```
-scp ~/downloads/workers/kube-proxy debian@worker1:~/
+scp ~/downloads/worker/kube-proxy debian@worker1:~/
 ```
 
 ```
@@ -256,7 +237,7 @@ Same CIDR as defined in the Controller manager
 apiVersion: kubeproxy.config.k8s.io/v1alpha1
 kind: KubeProxyConfiguration
 clientConnection:
-  clientConnection: /var/lib/kube-proxy/kubeconfig
+  kubeconfig: /var/lib/kube-proxy/kubeconfig
 mode: iptables
 clusterCIDR: 10.200.0.0/16
 ```
