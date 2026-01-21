@@ -1,0 +1,17 @@
+[ req ]
+prompt  = no
+default_md  = sha256
+distinguished_name  = dn
+req_extensions      = req_ext
+
+[ dn ]
+CN = system:node:worker1
+O  = system:nodes
+
+[ req_ext ]
+subjectAltName  = @alt_names
+
+[ alt_names ]
+DNS.1 = worker1
+DNS.2 = worker1.k8s.local
+IP.1  = 10.20.0.11
