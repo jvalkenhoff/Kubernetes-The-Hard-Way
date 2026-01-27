@@ -1,14 +1,23 @@
 <network>
   <name>k8s-net</name>
   <forward mode='nat'/>
-  <bridge name='virbr20'/>
+  <bridge name='virbr20', stp='on' delay='0'/>
+  <domain name='k8s.local' localOnly='yes' />
+    
   <ip address='10.20.0.1' netmask='255.255.255.0'>
     <dhcp>
-      <range start='10.20.0.100' end='10.20.0.254'/>
-      <!-- <host mac='52:54:00:1e:69:8e' name='control-plane' ip='10.20.0.10'/>
-      <host mac='52:54:00:00:e5:00' name='worker1' ip='10.20.0.11'/>
-      <host mac='52:54:00:20:00:0e' name='worker2' ip='10.20.0.12'/>
-      <host mac='52:54:00:ef:98:3d' name='worker3' ip='10.20.0.13'/> -->
+      <range start='10.20.0.200' end='10.20.0.254'/>
+
+      <!-- Virtual API, points to cp1 -->
+      <host mac='52:54:00:aa:bb:09' name='api' ip='10.20.0.9'/>
+
+      <!-- Control Plane -->
+      <host mac='52:54:00:aa:bb:10' name='cp1' ip='10.20.0.10'/>
+
+      <!-- Workers -->
+      <host mac='52:54:00:aa:bb:11' name='w1' ip='10.20.0.11'/>
+      <host mac='52:54:00:aa:bb:12' name='w2' ip='10.20.0.12'/>
+      <host mac='52:54:00:aa:bb:13' name='w3' ip='10.20.0.13'/>
     </dhcp>
   </ip>
 </network>
