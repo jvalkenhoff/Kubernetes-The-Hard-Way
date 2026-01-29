@@ -1,4 +1,4 @@
-# Phase 2 Networking Foundation
+# Phase 2 Network Provisioning
 Networking will have its own Phase. VMs should be able to attach to a network that has already been setup.
 To keep everything clustered, I will setup a bridged network with `virsh`. In later stages, tap networks like `macvtap` will be used.
 
@@ -9,7 +9,7 @@ To keep everything clustered, I will setup a bridged network with `virsh`. In la
 - [Verify](#verify)
 
 ## Network Design
-The network layout has been defined during the [Planning Phase](https://github.com/jvalkenhoff/Kubernetes-The-Hard-Way/blob/iteration-1/docs/00-InfraPlanning.md#networking). Here is the layout once more:
+The network layout has been defined during the [Planning Phase](00-Planning.md#networking). Here is the layout once more:
 
 **Network**
 - **Subnet**: `10.20.0.0/24`
