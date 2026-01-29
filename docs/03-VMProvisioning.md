@@ -22,7 +22,7 @@ debian-12.12.0-amd64-netinst.iso
 
 This ISO will be used for ALL nodes.
 ### MAC Pinning
-The MAC addresses has been determined in Phase 2. During installation, it is possible to already pin the MAC addresses, so the VMs immediately recive their desired MAC and IP address. The following list is needed in the next step:
+The MAC addresses has been determined in [Phase 2](02-NetworkProvisioning.md#mac-address). During installation, it is possible to already pin the MAC addresses, so the VMs immediately recive their desired MAC and IP address. The following list is needed in the next step:
 
 | VM        | MAC Address       |
 | --------- | ----------------- |

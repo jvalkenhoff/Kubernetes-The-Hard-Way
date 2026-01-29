@@ -1,4 +1,4 @@
-# Phase 1: Infrastructure Setup
+# Phase 1: Host Provisioning
 This phase prepares the virtualization backend. No VMs will be installed yet.
 
 - [Storage Backend](#storage-backend)
@@ -76,7 +76,7 @@ sudo virsh pool-dumpxml k8s_nodes
 ## VM Disks
 After defining the pool, each node will get its own logical volume.
 ### Naming
-Naming has been defined during the [Planning Phase](00-InfraPlanning.md#naming). To keep everything obvious, we will align the LV names with the VM names.
+Naming has been defined during the [Planning Phase](00-Planning.md#naming). To keep everything obvious, we will align the LV names with the VM names.
 
 | Name      | LV        | Storage |
 | --------- | --------- | ------- |
