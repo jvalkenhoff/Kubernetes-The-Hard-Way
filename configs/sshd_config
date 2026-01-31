@@ -1,0 +1,22 @@
+# Authentication
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+KbdInteractiveAuthentication no
+UsePAM yes
+
+# Reduce attack surface
+X11Forwarding no
+AllowTcpForwarding no
+PermitTunnel no
+PermitUserEnvironment no
+
+# Limit auth attempts
+MaxAuthTries 3
+LoginGraceTime 30
+
+Match Address 10.20.0.5
+    AllowUsers debian
+
+Match all
+    DenyUsers *
