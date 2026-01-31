@@ -3,37 +3,26 @@ This phase establishes **SSH access** to all nodes via a jumpbox and **removes r
 
 - [Goal](#goal)
 - [Access Model](#access-model)
-   * [Topology](#topology)
-   * [Target Access Matrix](#target-access-matrix)
-- [Host --> Jumpbox](#host-jumpbox)
-   * [Hostname resolution](#hostname-resolution)
-   * [Access](#access)
-- [Nodes: Privilege Escalation](#nodes-privilege-escalation)
-   * [Sudo](#sudo)
-   * [Add user to sudo group](#add-user-to-sudo-group)
-   * [Verify sudo](#verify-sudo)
-- [Nodes: Prepare SSH](#nodes-prepare-ssh)
-   * [Base SSH Config](#base-ssh-config)
-- [Jumpbox: Hostname Resolution](#jumpbox-hostname-resolution)
-- [Jumpbox: SSH Key Generation](#jumpbox-ssh-key-generation)
-- [Nodes: Authorize Jumpbox Access](#nodes-authorize-jumpbox-access)
-- [Nodes: SSH Hardening](#nodes-ssh-hardening)
-   * [SSH Hardening](#ssh-hardening)
-   * [Restrict access](#restrict-access)
-   * [Reload SSH](#reload-ssh)
-- [Optional: Enable Passwordless Sudo](#optional-enable-passwordless-sudo)
-- [Optional: Extra lockdown](#optional-extra-lockdown)
-   * [Disable root password login](#disable-root-password-login)
-   * [Prevent serial login](#prevent-serial-login)
+  - [Topology](#topology)
+  - [Target Access Matrix](#target-access-matrix)
+- [Part 1: Reachability](#part-1-reachability)
+  - [All VMs: sudo install](#all-vms-sudo-install)
+  - [Nodes: Prepare SSH](#nodes-prepare-ssh)
+  - [Jumpbox --> Nodes](#jumpbox----nodes)
+- [Part 2: Hardening](#part-2-hardening)
+  - [Nodes: SSH Hardening](#nodes-ssh-hardening)
+- [Host --> Jumpbox](#host----jumpbox)
 
 ## Goal
 This phase will be split up in two parts:
 - **Reachability**: establishes SSH
 - **Hardening:** After SSH has been established, access will become more restrictive
+
+In both parts, use `virsh console <vm-name>` to access the VMs.
 ## Access Model
 
 ### Topology
-This phase will setup **two trust boundaries**:
+This phase will set up **two trust boundaries**:
 1. **Host machine → Jumpbox** 
 2. **Jumpbox → Nodes**
 
@@ -61,37 +50,34 @@ The topology will look like this:
 | Jumpbox        | Worker nodes  | SSH    | debian | Node administration      |
 | Host machine   | Nodes         | ❌      | —      | Not allowed              |
 | Serial console | Any node      | 🔒     | root   | Break-glass only         |
-## Host --> Jumpbox
+## Part 1: Reachability
 
-### Hostname resolution
-Add this line to the `/etc/hosts` file:
-```
-10.20.0.5 jumpbox
-```
-### Access
-Access the jumpbox from the host with:
-```nginx
-ssh debian@jumpbox
-```
-> For convenience sake, I will keep the Host --> Jumpbox boundary pretty simple. 
-
-## Nodes: Privilege Escalation
-> [!NOTE]
-> **Access method:** Serial console (`virsh console`)
-### Sudo
+### All VMs: sudo install
 On each VM, install `sudo`
 ```
-apt update
-apt install -y sudo
+apt update && apt install -y sudo
 ```
 
-### Add user to sudo group
 Add the user `debian` to the sudo group
 ```
 usermod -aG sudo debian
 ```
 
-### Verify sudo
+Enable passwordless `sudo`. 
+On each node, run:
+```
+sudo visudo
+```
+
+Add the following line **below** the existing `%sudo` entry:
+```
+%sudo ALL=(ALL) NOPASSWD: ALL
+```
+
+> [!NOTE]
+> Passwordless sudo is enabled to reduce friction while working through the lab. 
+
+
 Logout, and log in with the debian user:
 ```
 exit
@@ -102,12 +88,8 @@ Check if you can login:
 sudo -i
 ```
 
-## Nodes: Prepare SSH
-> [!NOTE]
-> **Access method:** Serial console (`virsh console`)
-
-On all nodes, edit `/etc/ssh/sshd_config`
-### Base SSH Config
+### Nodes: Prepare SSH
+On all nodes, edit `/etc/ssh/sshd_config`. Clear the file contents, and add this:
 ```nginx
 # Authentication
 PermitRootLogin no
@@ -128,11 +110,7 @@ Reload SSH
 systemctl reload ssh
 ```
 
-## Jumpbox: Hostname Resolution
-> [!NOTE]
-> **Access method:** SSH host to jumpbox
-
-
+### Jumpbox --> Nodes
 On the jumpbox, edit `/etc/hosts` add add these lines so it matches the VM hosts:
 ```
 10.20.0.10 cp1
@@ -141,14 +119,15 @@ On the jumpbox, edit `/etc/hosts` add add these lines so it matches the VM hosts
 10.20.0.13 w3
 ```
 
-## Jumpbox: SSH Key Generation
 Generate a dedicated admin key on the jumpbox:
 ```
 ssh-keygen -t ed25519 -C "k8s-admin@jumpbox"
 ```
+
+> [!NOTE]
 > A passphrase is not necessary, but for good practice, it is recommended.
 
-## Nodes: Authorize Jumpbox Access
+
 From the jumpbox, copy the key to each node:
 ```bash
 ssh-copy-id debian@cp1
@@ -165,12 +144,14 @@ ssh debian@w2
 ssh debian@w3
 ```
 
-## Nodes: SSH Hardening
-> [!NOTE]
-> **Access method:** SSH jumpbox to Nodes
+## Part 2: Hardening
 
+> [!warning]
+> Apply SSH restrictions only after verifying key-based SSH access
+> from the jumpbox.
+
+### Nodes: SSH Hardening
 Edit the `/etc/ssh/sshd_config` on **all nodes**.
-### SSH Hardening
 ```
 # Authentication
 PermitRootLogin no
@@ -190,7 +171,7 @@ MaxAuthTries 3
 LoginGraceTime 30
 ```
 
-### Restrict access
+
 Add this part too. This will restrict access to the jumpbox.
 ```
 Match Address 10.20.0.5
@@ -200,7 +181,6 @@ Match all
     DenyUsers *
 ```
 
-### Reload SSH
 After the changes on the file, reload SSH
 ```
 systemctl reload ssh
@@ -214,51 +194,25 @@ ssh debian@w2
 ssh debian@w3
 ```
 
-## Optional: Enable Passwordless Sudo
-On each node, run:
-```
-sudo visudo
-```
+## Host --> Jumpbox
+Lastly, access the Jumpbox from the host. For convenience sake, I will keep the Host --> Jumpbox boundary pretty simple.  
 
-Add the following line **below** the existing `%sudo` entry:
+Add this line to the `/etc/hosts` file:
 ```
-%sudo ALL=(ALL) NOPASSWD: ALL
+10.20.0.5 jumpbox
 ```
 
-> Passwordless sudo is enabled to reduce friction while working through the lab. 
-
-
-## Optional: Extra lockdown
-> [!NOTE]
-> **Access method:** SSH jumpbox to Nodes
-
-### Disable root password login
-```
-sudo passwd -l root
+Access the jumpbox from the host with:
+```nginx
+ssh debian@jumpbox
 ```
 
-Root still remains accessible via `sudo`
-### Prevent serial login
-Edit `/etc/securetty`
-
-Comment out this line:
-```
-# ttyS0
-```
-
-This prevents direct root login over serial
 
 > [!IMPORTANT]
 > **Host system boundary**
->
 > From this point onward:
 > - The **host system is no longer required** for installation
 > - All remaining phases are executed via:
 >   ```
 >   Host → SSH → Jumpbox → SSH → Nodes
 >   ```
-> - The host is only used for:
->   - Power management (start/stop VMs)
->   - Emergency console access
->
-> All Kubernetes installation steps assume SSH access via the jumpbox.
