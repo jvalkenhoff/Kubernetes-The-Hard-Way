@@ -1,24 +1,18 @@
 # Phase 4: Access Boostrap
-This phase establishes **SSH access** to all nodes via a jumpbox and **removes reliance on serial console access**. **This will be the last and only phase where commands will be executed as `root` user**. In subsequent phases, root access will _only_ be possible via `sudo`.
-
-- [Goal](#goal)
 - [Access Model](#access-model)
   - [Topology](#topology)
   - [Target Access Matrix](#target-access-matrix)
-- [Part 1: Reachability](#part-1-reachability)
-  - [All VMs: sudo install](#all-vms-sudo-install)
-  - [Nodes: Prepare SSH](#nodes-prepare-ssh)
-  - [Jumpbox --> Nodes](#jumpbox----nodes)
-- [Part 2: Hardening](#part-2-hardening)
-  - [Nodes: SSH Hardening](#nodes-ssh-hardening)
+- [All VMs: sudo install](#all-vms-sudo-install)
+- [Nodes: Prepare SSH](#nodes-prepare-ssh)
+- [Jumpbox: Keys Setup](#jumpbox-keys-setup)
+- [Nodes: Turn off PasswordAuthentication](#nodes-turn-off-passwordauthentication)
 - [Host --> Jumpbox](#host----jumpbox)
 
 ## Goal
-This phase will be split up in two parts:
-- **Reachability**: establishes SSH
-- **Hardening:** After SSH has been established, access will become more restrictive
+This phase establishes **SSH access** to all nodes via a jumpbox and **removes reliance on serial console access**. **This will be the last and only phase where commands will be executed as `root` user**. In subsequent phases, root access will _only_ be possible via `sudo`.
 
 In both parts, use `virsh console <vm-name>` to access the VMs.
+
 ## Access Model
 
 ### Topology
@@ -50,9 +44,8 @@ The topology will look like this:
 | Jumpbox        | Worker nodes  | SSH    | debian | Node administration      |
 | Host machine   | Nodes         | ❌      | —      | Not allowed              |
 | Serial console | Any node      | 🔒     | root   | Break-glass only         |
-## Part 1: Reachability
 
-### All VMs: sudo install
+## All VMs: sudo install
 On each VM, install `sudo`
 ```
 apt update && apt install -y sudo
@@ -88,12 +81,13 @@ Check if you can login:
 sudo -i
 ```
 
-### Nodes: Prepare SSH
+## Nodes: Prepare SSH
 On all nodes, edit `/etc/ssh/sshd_config`. Clear the file contents, and add this:
-```nginx
+```bash
+tee /etc/ssh/sshd_config >/dev/null <<'EOF'
 # Authentication
 PermitRootLogin no
-PasswordAuthentication yes    # TEMPORARY
+PasswordAuthentication yes
 PubkeyAuthentication yes
 KbdInteractiveAuthentication no
 UsePAM yes
@@ -103,14 +97,15 @@ X11Forwarding no
 AllowTcpForwarding no
 PermitTunnel no
 PermitUserEnvironment no
+EOF
 ```
 
 Reload SSH
 ```
-systemctl reload ssh
+sshd -t && systemctl reload ssh
 ```
 
-### Jumpbox --> Nodes
+## Jumpbox: Keys Setup
 On the jumpbox, edit `/etc/hosts` add add these lines so it matches the VM hosts:
 ```
 10.20.0.10 cp1
@@ -127,13 +122,9 @@ ssh-keygen -t ed25519 -C "k8s-admin@jumpbox"
 > [!NOTE]
 > A passphrase is not necessary, but for good practice, it is recommended.
 
-
 From the jumpbox, copy the key to each node:
 ```bash
-ssh-copy-id debian@cp1
-ssh-copy-id debian@w1
-ssh-copy-id debian@w2
-ssh-copy-id debian@w3
+for h in cp1 w1 w2 w3; do ssh-copy-id debian@"$h"; done
 ```
 
 Verify:
@@ -144,41 +135,17 @@ ssh debian@w2
 ssh debian@w3
 ```
 
-## Part 2: Hardening
+
+## Nodes: Turn off PasswordAuthentication
 
 > [!warning]
 > Apply SSH restrictions only after verifying key-based SSH access
 > from the jumpbox.
 
-### Nodes: SSH Hardening
-Edit the `/etc/ssh/sshd_config` on **all nodes**.
+Run the following command on **all nodes**.
+This will turn off PasswordAuthentication
 ```
-# Authentication
-PermitRootLogin no
-PasswordAuthentication no
-PubkeyAuthentication yes
-KbdInteractiveAuthentication no
-UsePAM yes
-
-# Reduce attack surface
-X11Forwarding no
-AllowTcpForwarding no
-PermitTunnel no
-PermitUserEnvironment no
-
-# Limit auth attempts
-MaxAuthTries 3
-LoginGraceTime 30
-```
-
-
-Add this part too. This will restrict access to the jumpbox.
-```
-Match Address 10.20.0.5
-    AllowUsers debian
-
-Match all
-    DenyUsers *
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 ```
 
 After the changes on the file, reload SSH
